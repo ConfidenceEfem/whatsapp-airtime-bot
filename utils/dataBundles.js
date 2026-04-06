@@ -11,7 +11,6 @@ const SERVICE_IDS = {
   '9mobile':'etisalat-data',
 };
 
-// Cache bundles for 1 hour so we don't hammer the API
 const cache = {};
 const CACHE_TTL = 60 * 60 * 1000;
 
@@ -36,12 +35,11 @@ async function fetchBundles(network) {
     const variations = res.data?.content?.varations;
     if (!variations || !variations.length) return null;
 
-    // Clean up the data into a simple format
     const bundles = variations.map((v, i) => ({
-      index:   i + 1,
-      code:    v.variation_code,
-      name:    v.name,
-      amount:  parseFloat(v.variation_amount),
+      index:  i + 1,
+      code:   v.variation_code,
+      name:   v.name,
+      amount: parseFloat(v.variation_amount),
     }));
 
     cache[network] = { timestamp: now, data: bundles };
@@ -53,14 +51,33 @@ async function fetchBundles(network) {
   }
 }
 
-function formatBundleMenu(bundles, network) {
+// Split bundles into pages of 8 max, each page under 1600 chars
+function formatBundlePages(bundles, network) {
   const NETWORKS = { mtn: 'MTN', airtel: 'Airtel', glo: 'Glo', '9mobile': '9mobile' };
-  let menu = `📡 *${NETWORKS[network]} Data Bundles*\n━━━━━━━━━━━━━━━\n`;
-  bundles.forEach(b => {
-    menu += `${b.index}️⃣ ${b.name} — ₦${b.amount}\n`;
-  });
-  menu += `━━━━━━━━━━━━━━━\nReply with a number to select.\n\nOr type a custom amount (e.g. *500*)\n\n_Type *cancel* to start over_`;
-  return menu;
+  const ITEMS_PER_PAGE = 8;
+  const pages = [];
+
+  for (let i = 0; i < bundles.length; i += ITEMS_PER_PAGE) {
+    const chunk = bundles.slice(i, i + ITEMS_PER_PAGE);
+    const totalPages = Math.ceil(bundles.length / ITEMS_PER_PAGE);
+    const pageNum   = Math.floor(i / ITEMS_PER_PAGE) + 1;
+
+    let menu = `📡 *${NETWORKS[network]} Data Bundles*`;
+    if (totalPages > 1) menu += ` (Page ${pageNum}/${totalPages})`;
+    menu += `\n━━━━━━━━━━━━━━━\n`;
+
+    chunk.forEach(b => {
+      menu += `*${b.index}*. ${b.name} — ₦${b.amount}\n`;
+    });
+
+    menu += `━━━━━━━━━━━━━━━\nReply with a number to select.`;
+    if (pageNum < totalPages) menu += `\n\nType *more* to see more bundles.`;
+    menu += `\nOr type a custom amount (e.g. *500*)\n_Type *cancel* to start over_`;
+
+    pages.push(menu);
+  }
+
+  return pages;
 }
 
-module.exports = { fetchBundles, formatBundleMenu };
+module.exports = { fetchBundles, formatBundlePages };

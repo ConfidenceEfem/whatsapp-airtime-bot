@@ -6,11 +6,22 @@ const client = twilio(
 );
 
 async function sendMessage(to, body) {
-  await client.messages.create({
-    from: 'whatsapp:' + process.env.TWILIO_WHATSAPP_NUMBER,
-    to,
-    body,
-  });
+  try {
+    // Strip whatsapp: prefix if already there, then re-add cleanly
+    const toClean   = to.replace('whatsapp:', '');
+    const fromClean = process.env.TWILIO_WHATSAPP_NUMBER.replace('whatsapp:', '');
+
+    const result = await client.messages.create({
+      from: `whatsapp:${fromClean}`,
+      to:   `whatsapp:${toClean}`,
+      body,
+    });
+
+    console.log(`✅ Message sent to ${toClean} — SID: ${result.sid}`);
+  } catch (err) {
+    console.error(`❌ Failed to send message to ${to}:`, err.message);
+    throw err;
+  }
 }
 
 module.exports = { sendMessage };
