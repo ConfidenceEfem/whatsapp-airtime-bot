@@ -80,23 +80,26 @@ async function handleMessage(userId, rawMsg) {
     }
 
     case 'AWAITING_NETWORK': {
-      const network = NETWORK_MAP[msgLow] || detectNetwork(msgLow);
-      if (!network) return `❌ Network not recognised.\n\n${NETWORK_MENU}`;
+  const network = NETWORK_MAP[msgLow] || detectNetwork(msgLow);
+  if (!network) return `❌ Network not recognised.\n\n${NETWORK_MENU}`;
 
-      setSession(userId, { step: 'AWAITING_AMOUNT', data: { ...session.data, network } });
+  setSession(userId, { step: 'AWAITING_AMOUNT', data: { ...session.data, network } });
 
-      if (session.data.type === 'data') {
-        const bundles = await fetchBundles(network);
-        if (!bundles) {
-          return `⚠️ Couldn't load bundles right now. Please type an amount manually (e.g. *500*).\n\n_Type *cancel* to start over_`;
-        }
-        // Store bundles in session so we can reference by number
-        setSession(userId, { step: 'AWAITING_BUNDLE_CHOICE', data: { ...session.data, network, bundles } });
-        return formatBundleMenu(bundles, network);
-      }
+  if (session.data.type === 'data') {
+    // ✅ Save network in session immediately
+    setSession(userId, { step: 'AWAITING_BUNDLE_CHOICE', data: { ...session.data, network, bundles: [] } });
 
-      return `💰 How much airtime? (e.g. 100, 200, 500)\n\nMin: ₦50 | Max: ₦50,000\n\n_Type *cancel* to start over_`;
-    }
+    // ✅ Fetch bundles in background and send separately — don't await here
+    fetchAndSendBundles(userId, network).catch(err =>
+      console.error('❌ fetchAndSendBundles error:', err.message)
+    );
+
+    // ✅ Respond to Twilio immediately so it doesn't time out
+    return `⏳ Fetching *${NETWORKS[network]}* data bundles, please wait a moment...`;
+  }
+
+  return `💰 How much airtime? (e.g. 100, 200, 500)\n\nMin: ₦50 | Max: ₦50,000\n\n_Type *cancel* to start over_`;
+}
 
     case 'AWAITING_BUNDLE_CHOICE': {
       const { network, bundles } = session.data;
@@ -189,6 +192,27 @@ ${type === 'data' ? `Bundle:   ${bundleName}` : `Amount:   ₦${amount}`}
 Phone:    ${phone}
 Cost:     ₦${amount}
 ━━━━━━━━━━━━━━━`;
+}
+
+async function fetchAndSendBundles(userId, network) {
+  const { sendMessage } = require('../utils/twilioClient');
+
+  const bundles = await fetchBundles(network);
+
+  if (!bundles || bundles.length === 0) {
+    setSession(userId, { step: 'AWAITING_BUNDLE_CHOICE', data: { ...getSession(userId).data, bundles: [] } });
+    await sendMessage(userId, `⚠️ Couldn't load bundles for ${NETWORKS[network]} right now.\n\nPlease type an amount manually (e.g. *500*)\n\n_Type *cancel* to start over_`);
+    return;
+  }
+
+  // Update session with real bundles now that we have them
+  const currentSession = getSession(userId);
+  setSession(userId, {
+    step: 'AWAITING_BUNDLE_CHOICE',
+    data: { ...currentSession.data, bundles }
+  });
+
+  await sendMessage(userId, formatBundleMenu(bundles, network));
 }
 
 module.exports = { handleMessage };
