@@ -1,6 +1,9 @@
 const { getSession, setSession, clearSession } = require('../utils/sessionManager');
 const { parseOneLiner, isValidPhone, isValidAmount, detectNetwork } = require('../utils/validator');
-const { NETWORKS, getDataBundle } = require('../utils/networks');
+const { NETWORKS } = require('../utils/networks');
+const { fetchBundles, formatBundleMenu } = require('../utils/dataBundles');
+
+const NETWORK_MAP = { '1': 'mtn', '2': 'airtel', '3': 'glo', '4': '9mobile' };
 
 const NETWORK_MENU = `Which network?
 1️⃣ MTN
@@ -8,17 +11,16 @@ const NETWORK_MENU = `Which network?
 3️⃣ Glo
 4️⃣ 9mobile
 
-Reply with the number or network name.`;
+Reply with a number or network name.
+_Type *cancel* to start over_`;
 
-const NETWORK_MAP = { '1': 'mtn', '2': 'airtel', '3': 'glo', '4': '9mobile' };
-
-function handleMessage(userId, rawMsg) {
-  const msg     = rawMsg.trim();
-  const msgLow  = msg.toLowerCase();
+async function handleMessage(userId, rawMsg) {
+  const msg    = rawMsg.trim();
+  const msgLow = msg.toLowerCase();
   const session = getSession(userId);
 
-  // ── CANCEL anytime ───────────────────────────────────────────
-  if (['cancel', 'stop', 'exit', 'menu'].includes(msgLow)) {
+  // ── CANCEL / MENU reset anytime ───────────────────────────────
+  if (['cancel', 'stop', 'exit', 'menu', 'back', '0'].includes(msgLow)) {
     clearSession(userId);
     return mainMenu();
   }
@@ -27,25 +29,31 @@ function handleMessage(userId, rawMsg) {
   const oneLiner = parseOneLiner(msgLow);
   if (oneLiner) {
     const { type, amount, network, phone } = oneLiner;
-    let summary = '';
 
     if (type === 'data') {
-      const bundle = getDataBundle(network, amount);
-      if (!bundle) return `❌ No data bundle available for ₦${amount} on ${NETWORKS[network]}. Try a different amount.`;
-      summary = buildSummary({ type, network, amount: bundle.amount, phone, dataSize: bundle.data });
-    } else {
-      summary = buildSummary({ type, network, amount, phone });
+      const bundles = await fetchBundles(network);
+      const bundle  = bundles
+        ? [...bundles].reverse().find(b => b.amount <= amount)
+        : null;
+
+      if (!bundle) {
+        return `❌ No data bundle found for ₦${amount} on ${NETWORKS[network]}.\n\nSend *data* to browse available bundles.`;
+      }
+
+      const summary = buildSummary({ type, network, amount: bundle.amount, phone, bundleName: bundle.name, bundleCode: bundle.code });
+      setSession(userId, { step: 'AWAITING_CONFIRM', data: { type, network, amount: bundle.amount, phone, bundleName: bundle.name, bundleCode: bundle.code } });
+      return `${summary}\n\nReply *YES* to confirm and pay, or *NO* to cancel.`;
     }
 
+    const summary = buildSummary({ type, network, amount, phone });
     setSession(userId, { step: 'AWAITING_CONFIRM', data: oneLiner });
-    return `${summary}\n\nReply *YES* to confirm or *NO* to cancel.`;
+    return `${summary}\n\nReply *YES* to confirm and pay, or *NO* to cancel.`;
   }
 
   // ── STEP MACHINE ──────────────────────────────────────────────
   switch (session.step) {
 
     case 'IDLE': {
-      // Direct keyword shortcuts
       if (msgLow === 'airtime') {
         setSession(userId, { step: 'AWAITING_NETWORK', data: { type: 'airtime' } });
         return NETWORK_MENU;
@@ -54,7 +62,8 @@ function handleMessage(userId, rawMsg) {
         setSession(userId, { step: 'AWAITING_NETWORK', data: { type: 'data' } });
         return NETWORK_MENU;
       }
-      // Any greeting or first message → show main menu
+      // Any other message → show menu and move to AWAITING_SERVICE
+      setSession(userId, { step: 'AWAITING_SERVICE', data: {} });
       return mainMenu();
     }
 
@@ -67,37 +76,68 @@ function handleMessage(userId, rawMsg) {
         setSession(userId, { step: 'AWAITING_NETWORK', data: { type: 'data' } });
         return NETWORK_MENU;
       }
-      return `Please reply with *1* for Airtime or *2* for Data.`;
+      return `Please reply with *1* for Airtime or *2* for Data.\n\n_Type *cancel* to start over_`;
     }
 
     case 'AWAITING_NETWORK': {
       const network = NETWORK_MAP[msgLow] || detectNetwork(msgLow);
       if (!network) return `❌ Network not recognised.\n\n${NETWORK_MENU}`;
+
       setSession(userId, { step: 'AWAITING_AMOUNT', data: { ...session.data, network } });
-      return session.data.type === 'airtime'
-        ? `💰 How much airtime? (e.g. 100, 200, 500)\n\nMinimum: ₦50 | Maximum: ₦50,000`
-        : `💰 How much do you want to spend on data? (e.g. 500, 1000, 2000)`;
+
+      if (session.data.type === 'data') {
+        const bundles = await fetchBundles(network);
+        if (!bundles) {
+          return `⚠️ Couldn't load bundles right now. Please type an amount manually (e.g. *500*).\n\n_Type *cancel* to start over_`;
+        }
+        // Store bundles in session so we can reference by number
+        setSession(userId, { step: 'AWAITING_BUNDLE_CHOICE', data: { ...session.data, network, bundles } });
+        return formatBundleMenu(bundles, network);
+      }
+
+      return `💰 How much airtime? (e.g. 100, 200, 500)\n\nMin: ₦50 | Max: ₦50,000\n\n_Type *cancel* to start over_`;
+    }
+
+    case 'AWAITING_BUNDLE_CHOICE': {
+      const { network, bundles } = session.data;
+      const choiceNum = parseInt(msgLow);
+
+      // User picked a number from the list
+      if (!isNaN(choiceNum) && choiceNum >= 1 && choiceNum <= bundles.length) {
+        const bundle = bundles[choiceNum - 1];
+        setSession(userId, { step: 'AWAITING_PHONE', data: { ...session.data, amount: bundle.amount, bundleName: bundle.name, bundleCode: bundle.code } });
+        return `📱 What phone number should receive *${bundle.name}*?\n\n(e.g. 08012345678)\n\n_Type *cancel* to start over_`;
+      }
+
+      // User typed a custom amount
+      const customAmount = parseInt(msgLow);
+      if (!isNaN(customAmount) && isValidAmount(customAmount)) {
+        const match = [...bundles].reverse().find(b => b.amount <= customAmount);
+        if (!match) {
+          return `❌ No bundle available for ₦${customAmount}.\n\nPlease pick from the list or try a different amount.\n\n_Type *cancel* to start over_`;
+        }
+        setSession(userId, { step: 'AWAITING_PHONE', data: { ...session.data, amount: match.amount, bundleName: match.name, bundleCode: match.code } });
+        return `📦 Closest bundle: *${match.name}* for ₦${match.amount}\n\n📱 What number should receive this data?\n\n_Type *cancel* to start over_`;
+      }
+
+      return `❌ Invalid choice. Pick a number from the list or type a custom amount.\n\n_Type *cancel* to start over_`;
     }
 
     case 'AWAITING_AMOUNT': {
+      // This is only for airtime now
       const amount = parseInt(msgLow);
-      if (!isValidAmount(amount)) return `❌ Enter a valid amount between ₦50 and ₦50,000.`;
-
-      if (session.data.type === 'data') {
-        const bundle = getDataBundle(session.data.network, amount);
-        if (!bundle) return `❌ No bundle for ₦${amount} on ${NETWORKS[session.data.network]}.\n\nTry: ₦100, ₦200, ₦500, ₦1000, ₦2000, or ₦3000.`;
-        setSession(userId, { step: 'AWAITING_PHONE', data: { ...session.data, amount: bundle.amount, dataSize: bundle.data } });
-        return `📦 You'll get *${bundle.data}* for ₦${bundle.amount} on ${NETWORKS[session.data.network]}.\n\n📱 What phone number should receive this data?`;
+      if (!isValidAmount(amount)) {
+        return `❌ Enter a valid amount between ₦50 and ₦50,000.\n\n_Type *cancel* to start over_`;
       }
-
       setSession(userId, { step: 'AWAITING_PHONE', data: { ...session.data, amount } });
-      return `📱 What phone number should receive ₦${amount} airtime? (e.g. 08012345678)`;
+      return `📱 What number should receive ₦${amount} airtime?\n\n(e.g. 08012345678)\n\n_Type *cancel* to start over_`;
     }
 
     case 'AWAITING_PHONE': {
       const phone = msgLow.replace(/\s+/g, '');
-      if (!isValidPhone(phone)) return `❌ Invalid phone number. Enter a valid Nigerian number (e.g. 08012345678).`;
-
+      if (!isValidPhone(phone)) {
+        return `❌ Invalid number. Enter a valid Nigerian number e.g. 08012345678\n\n_Type *cancel* to start over_`;
+      }
       const d = { ...session.data, phone };
       setSession(userId, { step: 'AWAITING_CONFIRM', data: d });
       return `${buildSummary(d)}\n\nReply *YES* to confirm and pay, or *NO* to cancel.`;
@@ -107,8 +147,9 @@ function handleMessage(userId, rawMsg) {
       if (msgLow === 'yes') {
         const d = session.data;
         clearSession(userId);
-        // 🔜 Payment + VTPass integration goes here
-        return `✅ Order received! Processing your ${d.type === 'data' ? d.dataSize + ' data' : '₦' + d.amount + ' airtime'} for ${d.phone} on ${NETWORKS[d.network]}.\n\n💳 Payment link coming soon...\n\nSend *hi* to start a new order.`;
+        // 🔜 Paystack payment link goes here next
+        const item = d.type === 'data' ? d.bundleName : `₦${d.amount} airtime`;
+        return `✅ Order confirmed!\n\nProcessing *${item}* for *${d.phone}* on *${NETWORKS[d.network]}*.\n\n💳 Payment link coming soon...\n\n_Send *hi* to place a new order_`;
       }
       if (msgLow === 'no') {
         clearSession(userId);
@@ -130,22 +171,23 @@ What would you like to do?
 1️⃣ Buy Airtime
 2️⃣ Buy Data
 
-Reply with *1* or *2*, or just type:
-- *airtime* to buy airtime
-- *data* to buy data
-- Or send everything at once, e.g:
-  _airtime 500 mtn 08012345678_
-  _data 1000 airtel 08012345678_`;
+Reply with *1* or *2*, or type directly:
+- *airtime* — buy airtime
+- *data* — buy data
+
+Or send everything at once:
+_airtime 500 mtn 08012345678_
+_data 1000 airtel 08012345678_`;
 }
 
-function buildSummary({ type, network, amount, phone, dataSize }) {
+function buildSummary({ type, network, amount, phone, bundleName }) {
   return `📋 *Order Summary*
 ━━━━━━━━━━━━━━━
-Type:    ${type === 'data' ? '📡 Data' : '📶 Airtime'}
-Network: ${NETWORKS[network]}
-${type === 'data' ? `Bundle:  ${dataSize}` : `Amount:  ₦${amount}`}
-Phone:   ${phone}
-Cost:    ₦${amount}
+Type:     ${type === 'data' ? '📡 Data' : '📶 Airtime'}
+Network:  ${NETWORKS[network]}
+${type === 'data' ? `Bundle:   ${bundleName}` : `Amount:   ₦${amount}`}
+Phone:    ${phone}
+Cost:     ₦${amount}
 ━━━━━━━━━━━━━━━`;
 }
 

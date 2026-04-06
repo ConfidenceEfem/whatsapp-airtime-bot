@@ -5,14 +5,12 @@ const { handleMessage }     = require('../handlers/messageHandler');
 
 const router = express.Router();
 
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {  // ← async added here
 
   if (process.env.NODE_ENV === 'production') {
     const signature = req.headers['x-twilio-signature'];
-    
-    // Build URL dynamically from the request — always matches exactly
     const url = `https://${req.headers.host}/webhook`;
-    
+
     const isValid = twilio.validateRequest(
       process.env.TWILIO_AUTH_TOKEN,
       signature,
@@ -22,7 +20,6 @@ router.post('/', (req, res) => {
 
     if (!isValid) {
       console.warn('⚠️  Invalid Twilio signature — request rejected');
-      console.warn('URL used for validation:', url);
       return res.status(403).send('Forbidden');
     }
   }
@@ -32,12 +29,20 @@ router.post('/', (req, res) => {
 
   console.log(`📩 [${new Date().toISOString()}] ${userId}: ${body}`);
 
-  const reply  = handleMessage(userId, body);
-  const twiml  = new MessagingResponse();
-  twiml.message(reply);
+  try {
+    const reply = await handleMessage(userId, body);  // ← await here
+    const twiml = new MessagingResponse();
+    twiml.message(reply);
+    res.writeHead(200, { 'Content-Type': 'text/xml' });
+    res.end(twiml.toString());
+  } catch (err) {
+    console.error('❌ Error handling message:', err.message);
+    const twiml = new MessagingResponse();
+    twiml.message('⚠️ Something went wrong. Please try again or type *hi* to restart.');
+    res.writeHead(200, { 'Content-Type': 'text/xml' });
+    res.end(twiml.toString());
+  }
 
-  res.writeHead(200, { 'Content-Type': 'text/xml' });
-  res.end(twiml.toString());
 });
 
 module.exports = router;
