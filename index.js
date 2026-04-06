@@ -3,6 +3,10 @@ const express = require('express');
 const webhookRoute = require('./routes/webhook');
 
 const app = express();
+
+// ← This line is critical on Render — tells Express to trust the proxy
+app.set('trust proxy', true);
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
