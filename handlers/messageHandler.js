@@ -170,18 +170,36 @@ async function handleMessage(userId, rawMsg) {
 }
 
 async function fetchAndSendBundles(userId, network) {
-  const { sendMessage } = require('../utils/metaClient');
+  const axios = require('axios');
+
+  async function sendMessage(to, body) {
+    await axios.post(
+      `https://graph.facebook.com/v19.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+  }
+
   try {
     console.log(`🔍 Fetching bundles for ${network}...`);
     const bundles = await fetchBundles(network);
-    console.log(`📦 Got ${bundles ? bundles.length : 0} bundles`);
 
     if (!bundles || bundles.length === 0) {
       setSession(userId, {
         step: 'AWAITING_BUNDLE_CHOICE',
         data: { ...getSession(userId).data, bundles: [] }
       });
-      await sendMessage(userId, `⚠️ Couldn't load bundles right now.\n\nType an amount manually (e.g. *500*)\n\n_Type *cancel* to start over_`);
+      await sendMessage(userId, `⚠️ Couldn't load bundles right now.\n\nType an amount manually e.g. 500\n\nType cancel to start over`);
       return;
     }
 
@@ -192,16 +210,10 @@ async function fetchAndSendBundles(userId, network) {
 
     const pages = formatBundlePages(bundles, network);
     await sendMessage(userId, pages[0]);
-    console.log(`✅ Bundle page 1/${pages.length} sent to ${userId}`);
+    console.log(`✅ Bundle menu sent to ${userId}`);
 
   } catch (err) {
     console.error('❌ fetchAndSendBundles failed:', err.message);
-    try {
-      const { sendMessage } = require('../utils/whatsappClient');
-      await sendMessage(userId, `⚠️ Something went wrong loading bundles.\n\nType an amount manually (e.g. *500*)\n\n_Type *cancel* to start over_`);
-    } catch (e) {
-      console.error('❌ Could not send error message:', e.message);
-    }
   }
 }
 
