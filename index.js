@@ -43,7 +43,9 @@ app.post('/webhook', async (req, res) => {
     console.log(`📩 ${userId}: ${body}`);
 
     const reply = await handleMessage(userId, body);
+    console.log("Reply:", reply);
     await sendMessage(userId, reply);
+    
 
   } catch (err) {
     console.error('❌ Webhook error:', err.message);
