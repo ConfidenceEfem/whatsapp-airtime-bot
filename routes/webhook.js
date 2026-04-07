@@ -1,56 +1,51 @@
 const express = require('express');
-const twilio  = require('twilio');
-const { MessagingResponse } = require('twilio').twiml;
-const { handleMessage }     = require('../handlers/messageHandler');
+const { handleMessage } = require('../handlers/messageHandler');
 
 const router = express.Router();
 
-router.post('/', async (req, res) => {
+const VERIFY_TOKEN = process.env.META_VERIFY_TOKEN;
 
-  if (process.env.NODE_ENV === 'production') {
-    const signature = req.headers['x-twilio-signature'];
+// Meta sends a GET request to verify your webhook
+router.get('/', (req, res) => {
+  const mode      = req.query['hub.mode'];
+  const token     = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-    // Use APP_URL from env to avoid host header issues on Render
-    const url = `${process.env.APP_URL}/webhook`;
-
-    console.log(`🔐 Validating signature for URL: ${url}`);
-
-    const isValid = twilio.validateRequest(
-      process.env.TWILIO_AUTH_TOKEN,
-      signature,
-      url,
-      req.body
-    );
-
-    if (!isValid) {
-      console.warn(`⚠️ Signature failed — URL used: ${url}`);
-      console.warn(`⚠️ Signature received: ${signature}`);
-      return res.status(403).send('Forbidden');
-    }
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified by Meta');
+    return res.status(200).send(challenge);
   }
+  res.sendStatus(403);
+});
 
-  const userId = req.body.From;
-  const body   = req.body.Body || '';
-
-  console.log(`📩 [${new Date().toISOString()}] From: ${userId} | Message: ${body}`);
+// Meta sends a POST request for every incoming message
+router.post('/', async (req, res) => {
+  // Acknowledge receipt immediately — Meta needs this fast
+  res.sendStatus(200);
 
   try {
+    const entry   = req.body.entry?.[0];
+    const changes = entry?.changes?.[0];
+    const value   = changes?.value;
+
+    // Ignore delivery receipts and other non-message events
+    if (!value?.messages) return;
+
+    const msg    = value.messages[0];
+    const userId = msg.from; // e.g. "2348012345678"
+    const body   = msg.text?.body || '';
+
+    if (!body) return;
+
+    console.log(`📩 [${new Date().toISOString()}] ${userId}: ${body}`);
+
     const reply = await handleMessage(userId, body);
-    console.log(`📤 Sending reply: ${reply.substring(0, 60)}...`);
 
-    const twiml = new MessagingResponse();
-    twiml.message(reply);
-    res.writeHead(200, { 'Content-Type': 'text/xml' });
-    res.end(twiml.toString());
+    const { sendMessage } = require('../utils/metaClient');
+    await sendMessage(userId, reply);
 
-    console.log(`✅ Reply sent successfully`);
   } catch (err) {
-    console.error('❌ Error in handleMessage:', err.message);
-    console.error(err.stack);
-    const twiml = new MessagingResponse();
-    twiml.message('⚠️ Something went wrong. Type hi to restart.');
-    res.writeHead(200, { 'Content-Type': 'text/xml' });
-    res.end(twiml.toString());
+    console.error('❌ Webhook error:', err.message);
   }
 });
 

@@ -170,7 +170,7 @@ async function handleMessage(userId, rawMsg) {
 }
 
 async function fetchAndSendBundles(userId, network) {
-  const { sendMessage } = require('../utils/twilioClient');
+  const { sendMessage } = require('../utils/metaClient');
   try {
     console.log(`🔍 Fetching bundles for ${network}...`);
     const bundles = await fetchBundles(network);
@@ -197,7 +197,7 @@ async function fetchAndSendBundles(userId, network) {
   } catch (err) {
     console.error('❌ fetchAndSendBundles failed:', err.message);
     try {
-      const { sendMessage } = require('../utils/twilioClient');
+      const { sendMessage } = require('../utils/whatsappClient');
       await sendMessage(userId, `⚠️ Something went wrong loading bundles.\n\nType an amount manually (e.g. *500*)\n\n_Type *cancel* to start over_`);
     } catch (e) {
       console.error('❌ Could not send error message:', e.message);
