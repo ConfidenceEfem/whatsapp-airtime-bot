@@ -3,7 +3,7 @@ const express  = require('express');
 const crypto   = require('crypto');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode   = require('qrcode-terminal');
-
+const puppeteer = require('puppeteer');
 const { handleMessage }            = require('./handlers/messageHandler');
 const { setClient }                = require('./utils/whatsappClient');
 const { verifyPayment }            = require('./utils/paystack');
@@ -98,6 +98,8 @@ const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
+    browserWSEndpoint: undefined,
+    executablePath: puppeteer.executablePath(),
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
