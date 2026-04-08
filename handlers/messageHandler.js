@@ -2,6 +2,9 @@ const { getSession, setSession, clearSession } = require('../utils/sessionManage
 const { parseOneLiner, isValidPhone, isValidAmount, detectNetwork } = require('../utils/validator');
 const { NETWORKS } = require('../utils/networks');
 const { fetchBundles, formatBundlePages } = require('../utils/dataBundles');
+const { generatePaymentLink } = require('../utils/paystack');
+const { saveOrder }           = require('../utils/orderStore');
+const { v4: uuidv4 }          = require('uuid');
 
 const NETWORK_MAP = { '1': 'mtn', '2': 'airtel', '3': 'glo', '4': '9mobile' };
 
@@ -149,19 +152,70 @@ async function handleMessage(userId, rawMsg) {
       return `${buildSummary(d)}\n\nReply *YES* to confirm and pay, or *NO* to cancel.`;
     }
 
-    case 'AWAITING_CONFIRM': {
-      if (msgLow === 'yes') {
-        const d = session.data;
-        clearSession(userId);
-        const item = d.type === 'data' ? d.bundleName : `₦${d.amount} airtime`;
-        return `✅ Order confirmed!\n\nProcessing *${item}* for *${d.phone}* on *${NETWORKS[d.network]}*.\n\n💳 Payment link coming soon...\n\n_Send *hi* to place a new order_`;
-      }
-      if (msgLow === 'no') {
-        clearSession(userId);
-        return `❌ Order cancelled.\n\n${mainMenu()}`;
-      }
-      return `Please reply *YES* to confirm or *NO* to cancel.`;
+   case 'AWAITING_CONFIRM': {
+  if (msgLow === 'yes') {
+    const d = session.data;
+    clearSession(userId);
+
+    try {
+      // Generate unique reference for this order
+      const reference = `ABOT-${uuidv4().split('-')[0].toUpperCase()}`;
+
+      // Save order so we can fulfill it after payment
+      saveOrder(reference, {
+        userId,
+        type:       d.type,
+        network:    d.network,
+        amount:     d.amount,
+        phone:      d.phone,
+        bundleName: d.bundleName || null,
+        bundleCode: d.bundleCode || null,
+      });
+
+      // Generate Paystack payment link
+      // Use phone as fake email since WhatsApp users may not have email
+      const email = `${d.phone}@airtimebot.com`;
+      const paymentUrl = await generatePaymentLink({
+        amount:    d.amount,
+        email,
+        reference,
+        metadata: {
+          phone:   d.phone,
+          network: d.network,
+          type:    d.type,
+        },
+      });
+
+      const item = d.type === 'data' ? d.bundleName : `₦${d.amount} airtime`;
+      return `✅ *Order Confirmed!*
+
+📋 *Summary*
+━━━━━━━━━━━━━━━
+${d.type === 'data' ? '📡 Data' : '📶 Airtime'}: ${item}
+Network: ${NETWORKS[d.network]}
+Phone: ${d.phone}
+Amount: ₦${d.amount}
+Ref: ${reference}
+━━━━━━━━━━━━━━━
+
+💳 *Click the link below to pay:*
+${paymentUrl}
+
+Once payment is confirmed, your ${d.type} will be sent automatically! ⚡`;
+
+    } catch (err) {
+      console.error('❌ Payment link generation failed:', err.message);
+      return `⚠️ Something went wrong generating your payment link. Please try again.\n\nType *hi* to start over.`;
     }
+  }
+
+  if (msgLow === 'no') {
+    clearSession(userId);
+    return `❌ Order cancelled.\n\n${mainMenu()}`;
+  }
+
+  return `Please reply *YES* to confirm or *NO* to cancel.`;
+}
 
     default:
       clearSession(userId);
