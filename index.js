@@ -112,10 +112,9 @@ const client = new Client({
 });
 
 client.on('qr', async (qr) => {
-  const qrlink =  await qrcodeForImage.toDataURL(qr)
-  console.log("click this for qr image", qrlink)
+
   console.log('📱 Scan this QR code with your WhatsApp:');
-  qrcode.generate(qr, { small: true });
+  qrcode.generate(qr, { small: false });
 });
 
 client.on('ready', () => {
