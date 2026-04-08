@@ -98,7 +98,6 @@ const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
     headless: true,
-    browserWSEndpoint: undefined,
     executablePath: puppeteer.executablePath(),
     args: [
       '--no-sandbox',
