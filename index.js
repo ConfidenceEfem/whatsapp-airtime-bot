@@ -12,10 +12,34 @@ const { getOrder, deleteOrder }    = require('./utils/orderStore');
 const { purchaseAirtime, purchaseData } = require('./utils/vtpass');
 const { NETWORKS }                 = require('./utils/networks');
 
+let qrImage = null;
+
 // ── Express app (for Paystack webhook) ───────────────────────
 const app = express();
 
 app.get('/', (_req, res) => res.send('AirtimeBot is running ✅'));
+
+app.get('/qr', (req, res) => {
+  if (!qrImage) {
+    return res.send(`
+      <h2>QR not ready yet...</h2>
+      <p>Refresh the page in a few seconds.</p>
+    `);
+  }
+
+  res.send(`
+    <html>
+      <head>
+        <title>Scan QR</title>
+      </head>
+      <body style="text-align:center; font-family:sans-serif;">
+        <h2>Scan this QR with WhatsApp</h2>
+        <img src="${qrImage}" />
+        <p>Refresh if QR changes</p>
+      </body>
+    </html>
+  `);
+});
 
 // ⚠️ This must come BEFORE express.json() — Paystack needs raw body
 app.post('/payment/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -113,8 +137,17 @@ const client = new Client({
 
 client.on('qr', async (qr) => {
 
+    try {
+      console.log("get small image url")
+    qrImage = await qrcodeForImage.toDataURL(qr);
+  } catch (err) {
+    console.error('QR generation error:', err);
+  }
+
   console.log('📱 Scan this QR code with your WhatsApp:');
-  qrcode.generate(qr, { small: false });
+
+
+  qrcode.generate(qr, { small: true });
 });
 
 client.on('ready', () => {
