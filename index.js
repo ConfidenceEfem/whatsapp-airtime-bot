@@ -1,56 +1,42 @@
 require('dotenv').config();
-const express = require('express');
-const axios   = require('axios');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+const qrcode = require('qrcode-terminal');
 const { handleMessage } = require('./handlers/messageHandler');
+const { setClient } = require('./utils/whatsappClient');
 
-const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-
-app.get('/', (_req, res) => res.send('AirtimeBot is running ✅'));
-
-app.post('/webhook', async (req, res) => {
-  res.sendStatus(200);
-
-  console.log("message now")
-
-  try {
-    const msg  = req.body;
-    const from = msg.from;
-    const body = msg.body || '';
-
-    // Ignore non-text and group messages
-    if (!from || !body || from.includes('@g.us')) return;
-    if (msg.type !== 'chat') return;
-
-    console.log(`📩 ${from}: ${body}`);
-
-    const reply = await handleMessage(from, body);
-    await sendMessage(from, reply);
-
-  } catch (err) {
-    console.error('❌ Error:', err.message);
+const client = new Client({
+  authStrategy: new LocalAuth(),
+  puppeteer: {
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
   }
 });
 
-async function sendMessage(to, body) {
-  const instance = process.env.ULTRAMSG_INSTANCE_ID;
-  const token    = process.env.ULTRAMSG_TOKEN;
-console.log("before sending message")
+client.on('qr', (qr) => {
+  console.log('📱 Scan this QR code with your WhatsApp:');
+  qrcode.generate(qr, { small: true });
+});
+
+client.on('ready', () => {
+  console.log('✅ WhatsApp bot is ready!');
+  setClient(client);
+});
+
+client.on('message', async (msg) => {
+  if (msg.isGroupMsg || msg.from === 'status@broadcast') return;
+
+  const userId = msg.from;
+  const body   = msg.body || '';
+
+  console.log(`📩 [${new Date().toISOString()}] ${userId}: ${body}`);
+
   try {
-    await axios.post(
-      `https://api.ultramsg.com/${instance}/messages/chat`,
-      { token, to, body },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-    console.log(`✅ Message sent to ${to}`);
+    const reply = await handleMessage(userId, body);
+    await msg.reply(reply);
+    console.log('✅ Reply sent successfully');
   } catch (err) {
-    console.error('❌ Send failed:', err.response?.data || err.message);
+    console.error('❌ Error:', err.message);
+    await msg.reply('⚠️ Something went wrong. Type hi to restart.');
   }
-}
+});
 
-// Export so messageHandler can use it for bundle sending
-module.exports = { sendMessage };
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 AirtimeBot running on port ${PORT}`));
+client.initialize();

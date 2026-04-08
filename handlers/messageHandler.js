@@ -170,18 +170,18 @@ async function handleMessage(userId, rawMsg) {
 }
 
 async function fetchAndSendBundles(userId, network) {
-  const { sendMessage } = require('../index');
-
+  const { sendMessage } = require('../utils/whatsappClient'); 
   try {
     console.log(`🔍 Fetching bundles for ${network}...`);
     const bundles = await fetchBundles(network);
+    console.log(`📦 Got ${bundles ? bundles.length : 0} bundles`);
 
     if (!bundles || bundles.length === 0) {
       setSession(userId, {
         step: 'AWAITING_BUNDLE_CHOICE',
         data: { ...getSession(userId).data, bundles: [] }
       });
-      await sendMessage(userId, `⚠️ Couldn't load bundles right now.\n\nType an amount manually e.g. 500\n\nType cancel to start over`);
+      await sendMessage(userId, `⚠️ Couldn't load bundles right now.\n\nType an amount manually (e.g. 500)\n\nType cancel to start over`);
       return;
     }
 
@@ -192,10 +192,16 @@ async function fetchAndSendBundles(userId, network) {
 
     const pages = formatBundlePages(bundles, network);
     await sendMessage(userId, pages[0]);
-    console.log(`✅ Bundle menu sent to ${userId}`);
+    console.log(`✅ Bundle page 1/${pages.length} sent to ${userId}`);
 
   } catch (err) {
     console.error('❌ fetchAndSendBundles failed:', err.message);
+    try {
+      const { sendMessage } = require('../utils/whatsappClient'); // ← changed
+      await sendMessage(userId, `⚠️ Something went wrong. Type an amount manually (e.g. 500)\n\nType cancel to start over`);
+    } catch (e) {
+      console.error('❌ Could not send error message:', e.message);
+    }
   }
 }
 
