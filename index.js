@@ -3,6 +3,7 @@ const express  = require('express');
 const crypto   = require('crypto');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode   = require('qrcode-terminal');
+const qrcodeForImage = require('qrcode');
 const puppeteer = require('puppeteer');
 const { handleMessage }            = require('./handlers/messageHandler');
 const { setClient }                = require('./utils/whatsappClient');
@@ -104,13 +105,15 @@ const client = new Client({
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--single-process',
-      '--no-zygote',
+      //    '--no-zygote',
+      // '--single-process'
     ],
   }
 });
 
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
+  const qrlink =  await qrcodeForImage.toDataURL(qr)
+  console.log("click this for qr image", qrlink)
   console.log('📱 Scan this QR code with your WhatsApp:');
   qrcode.generate(qr, { small: true });
 });
