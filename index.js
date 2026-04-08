@@ -6,8 +6,14 @@ const { setClient } = require('./utils/whatsappClient');
 
 const client = new Client({
   authStrategy: new LocalAuth(),
-  puppeteer: {
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+   puppeteer: {
+    headless: true,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu'
+    ],
   }
 });
 
@@ -19,6 +25,14 @@ client.on('qr', (qr) => {
 client.on('ready', () => {
   console.log('✅ WhatsApp bot is ready!');
   setClient(client);
+});
+
+client.on('auth_failure', msg => {
+  console.error('❌ AUTH FAILURE:', msg);
+});
+
+client.on('disconnected', reason => {
+  console.log('⚠️ Client disconnected:', reason);
 });
 
 client.on('message', async (msg) => {
