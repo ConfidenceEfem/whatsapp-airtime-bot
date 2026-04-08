@@ -12,6 +12,8 @@ app.get('/', (_req, res) => res.send('AirtimeBot is running ✅'));
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
 
+  console.log("message now")
+
   try {
     const msg  = req.body;
     const from = msg.from;
@@ -34,7 +36,7 @@ app.post('/webhook', async (req, res) => {
 async function sendMessage(to, body) {
   const instance = process.env.ULTRAMSG_INSTANCE_ID;
   const token    = process.env.ULTRAMSG_TOKEN;
-
+console.log("before sending message")
   try {
     await axios.post(
       `https://api.ultramsg.com/${instance}/messages/chat`,
