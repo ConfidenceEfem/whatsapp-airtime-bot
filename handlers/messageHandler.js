@@ -170,25 +170,7 @@ async function handleMessage(userId, rawMsg) {
 }
 
 async function fetchAndSendBundles(userId, network) {
-  const axios = require('axios');
-
-  async function sendMessage(to, body) {
-    await axios.post(
-      `https://graph.facebook.com/v19.0/${process.env.META_PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body },
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-  }
+  const { sendMessage } = require('../index');
 
   try {
     console.log(`🔍 Fetching bundles for ${network}...`);
