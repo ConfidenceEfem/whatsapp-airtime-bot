@@ -159,14 +159,13 @@ app.get('/qr', async (req, res) => {
   res.send(`
     <html>
       <head>
-        <title>Scan QR — AirtimeBot</title>
+        <title>Scan QR — Zapp</title>
         <meta http-equiv="refresh" content="18">
       </head>
       <body style="text-align:center;font-family:sans-serif;padding:40px;background:#f5f5f5">
         <h2>📱 Scan with WhatsApp</h2>
         <img src="${qrImage}" style="width:280px;border:4px solid #25D366;border-radius:12px;padding:8px;background:#fff"/>
         <p style="color:#888;font-size:13px">QR refreshes every 18 seconds — scan quickly!</p>
-        <p style="color:#888;font-size:12px">WhatsApp → Linked Devices → Link a Device</p>
       </body>
     </html>
   `);
