@@ -12,34 +12,15 @@ const { getOrder, deleteOrder }    = require('./utils/orderStore');
 const { purchaseAirtime, purchaseData } = require('./utils/vtpass');
 const { NETWORKS }                 = require('./utils/networks');
 
-let qrImage = null;
+let latestQR   = null;
+let botReady   = false;
 
 // ── Express app (for Paystack webhook) ───────────────────────
 const app = express();
 
-app.get('/', (_req, res) => res.send('AirtimeBot is running ✅'));
+app.get('/', (_req, res) => res.send('Zapp is running ✅'));
 
-app.get('/qr', (req, res) => {
-  if (!qrImage) {
-    return res.send(`
-      <h2>QR not ready yet...</h2>
-      <p>Refresh the page in a few seconds.</p>
-    `);
-  }
 
-  res.send(`
-    <html>
-      <head>
-        <title>Scan QR</title>
-      </head>
-      <body style="text-align:center; font-family:sans-serif;">
-        <h2>Scan this QR with WhatsApp</h2>
-        <img src="${qrImage}" />
-        <p>Refresh if QR changes</p>
-      </body>
-    </html>
-  `);
-});
 
 // ⚠️ This must come BEFORE express.json() — Paystack needs raw body
 app.post('/payment/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
@@ -129,30 +110,66 @@ const client = new Client({
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      //    '--no-zygote',
-      // '--single-process'
+         '--no-zygote',
+      '--single-process'
     ],
   }
 });
 
 client.on('qr', async (qr) => {
-
-    try {
-      console.log("get small image url")
-    qrImage = await qrcodeForImage.toDataURL(qr);
-  } catch (err) {
-    console.error('QR generation error:', err);
-  }
-
-  console.log('📱 Scan this QR code with your WhatsApp:');
-
-
+    latestQR = qr;
+  console.log('📱 New QR generated — visit /qr to scan');
   qrcode.generate(qr, { small: true });
 });
 
+const qrImage = await qrcodeForImage.toDataURL(latestQR);
+
 client.on('ready', () => {
-  console.log('✅ WhatsApp bot is ready!');
+    console.log('✅ WhatsApp bot is ready!');
+  latestQR = null;
+  botReady = true;
   setClient(client);
+
+});
+
+app.get('/qr', async (req, res) => {
+  if (botReady) {
+    return res.send(`
+      <html><body style="text-align:center;font-family:sans-serif;padding:40px">
+        <h2 style="color:green">✅ Bot is connected and running!</h2>
+        <p>No need to scan — WhatsApp is already linked.</p>
+      </body></html>
+    `);
+  }
+
+  if (!latestQR) {
+    return res.send(`
+      <html>
+        <head><meta http-equiv="refresh" content="3"></head>
+        <body style="text-align:center;font-family:sans-serif;padding:40px">
+          <h2>⏳ Waiting for QR code...</h2>
+          <p>Page refreshes automatically.</p>
+        </body>
+      </html>
+    `);
+  }
+
+  const qrImage = await qrcodeForImage.toDataURL(latestQR);
+
+  res.send(`
+    <html>
+      <head>
+        <title>Scan QR — AirtimeBot</title>
+        <meta http-equiv="refresh" content="18">
+      </head>
+      <body style="text-align:center;font-family:sans-serif;padding:40px;background:#f5f5f5">
+        <h2>📱 Scan with WhatsApp</h2>
+        <img src="${qrImage}" style="width:280px;border:4px solid #25D366;border-radius:12px;padding:8px;background:#fff"/>
+        <p style="color:#888;font-size:13px">QR refreshes every 18 seconds — scan quickly!</p>
+        <p style="color:#888;font-size:12px">WhatsApp → Linked Devices → Link a Device</p>
+      </body>
+    </html>
+  `);
 });
 
 client.on('auth_failure', msg => {

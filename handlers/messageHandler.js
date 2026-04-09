@@ -260,7 +260,7 @@ async function fetchAndSendBundles(userId, network) {
 }
 
 function mainMenu() {
-  return `👋 Welcome to *AirtimeBot* 🇳🇬
+  return `👋 Welcome to *Zapp* 🇳🇬
 
 What would you like to do?
 1️⃣ Buy Airtime
