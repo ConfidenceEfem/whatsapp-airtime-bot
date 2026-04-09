@@ -12,6 +12,7 @@ const { getOrder, deleteOrder }    = require('./utils/orderStore');
 const { purchaseAirtime, purchaseData } = require('./utils/vtpass');
 const { NETWORKS }                 = require('./utils/networks');
 
+
 let latestQR   = null;
 let botReady   = false;
 
@@ -122,7 +123,6 @@ client.on('qr', async (qr) => {
   qrcode.generate(qr, { small: true });
 });
 
-const qrImage = await qrcodeForImage.toDataURL(latestQR);
 
 client.on('ready', () => {
     console.log('✅ WhatsApp bot is ready!');
